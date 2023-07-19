@@ -10,8 +10,10 @@ import sys
 import warnings  # noqa
 
 from ddtrace import config  # noqa
+from ddtrace.context import Context
 from ddtrace.debugging._config import di_config  # noqa
 from ddtrace.debugging._config import ed_config  # noqa
+from ddtrace.internal import atexit
 from ddtrace.internal.compat import PY2  # noqa
 from ddtrace.internal.logger import get_logger  # noqa
 from ddtrace.internal.module import ModuleWatchdog  # noqa
@@ -261,6 +263,24 @@ try:
         from ddtrace.appsec._remoteconfiguration import enable_appsec_rc
 
         enable_appsec_rc()
+
+        # Loading status used in tests to detect if the `sitecustomize` has been
+        # properly loaded without exceptions. This must be the last action in the module
+        # when the execution ends with a success.
+        start_trace_on_startup = os.getenv("DD_START_TRACE_ON_STARTUP", False)
+        if start_trace_on_startup:
+            trace_name = os.getenv("DD_TRACE_NAME", "global-trace")
+            if (trace_id := os.getenv("DD_TRACE_ID", None)) and (span_id := os.getenv("DD_SPAN_ID", None)):
+                trace_ctx = Context(trace_id=int(trace_id), span_id=int(span_id))
+                tracer.context_provider.activate(trace_ctx)
+            global_trace = tracer.trace(trace_name)
+
+
+            def end_trace():
+                global_trace.finish()
+
+
+            atexit.register(end_trace)
 
     config._ddtrace_bootstrapped = True
     # Loading status used in tests to detect if the `sitecustomize` has been
